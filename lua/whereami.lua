@@ -1,6 +1,6 @@
 local M = {}
 
-function M.setup()
+function M.show()
   vim.api.nvim_create_user_command("WhereAmI", function()
     local params = { textDocument = vim.lsp.util.make_text_document_params() }
     local icons = {
@@ -64,5 +64,7 @@ function M.setup()
     end)
   end, { desc = "Mostra a hierarquia LSP atual (breadcrumb)" })
 end
+
+vim.api.nvim_create_user_command("WhereAmI", M.show, {})
 
 return M
