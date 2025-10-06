@@ -1,12 +1,20 @@
 local M = {}
-
 function M.setup()
   vim.api.nvim_create_user_command("WhereAmI", function()
+    print("Comando WhereAmI executado!")
+    
+    -- Verificar se há clientes LSP ativos
+    local clients = vim.lsp.get_active_clients({ bufnr = 0 })
+    if #clients == 0 then
+      vim.api.nvim_echo({ { "Nenhum LSP ativo neste buffer!", "WarningMsg" } }, false, {})
+      return
+    end
+    print("LSP ativo, clientes:", vim.inspect(vim.tbl_map(function(c) return c.name end, clients)))
+    
     local params = { textDocument = vim.lsp.util.make_text_document_params() }
   
-    -- Ícones baseados no tipo de símbolo
     local icons = {
-      File = " ",
+      File = " ",
       Module = "󰏗 ",
       Namespace = "󰅩 ",
       Package = "󰏖 ",
@@ -14,9 +22,9 @@ function M.setup()
       Method = "󰡱 ",
       Property = "󰜢 ",
       Field = "󰽐 ",
-      Constructor = " ",
-      Enum = " ",
-      Interface = " ",
+      Constructor = " ",
+      Enum = " ",
+      Interface = " ",
       Function = "󰊕 ",
       Variable = "󰀫 ",
       Constant = "󰏿 ",
@@ -27,20 +35,32 @@ function M.setup()
       Object = "󰅩 ",
       Key = "󰌋 ",
       Null = "󰟢 ",
-      EnumMember = " ",
-      Struct = " ",
-      Event = " ",
+      EnumMember = " ",
+      Struct = " ",
+      Event = " ",
       Operator = "󰆕 ",
       TypeParameter = "󰊄 ",
     }
   
-    -- Carregar símbolos de forma assíncrona
+    print("Requisitando símbolos...")
     vim.lsp.buf_request(0, "textDocument/documentSymbol", params, function(err, result)
-      if err or not result then return end
+      print("Resposta LSP recebida!")
+      
+      if err then
+        print("Erro LSP:", vim.inspect(err))
+        return
+      end
+      
+      if not result then
+        vim.api.nvim_echo({ { "LSP não retornou símbolos", "WarningMsg" } }, false, {})
+        return
+      end
+      
+      print("Símbolos recebidos:", #result)
   
       local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+      print("Linha do cursor:", cursor_line)
   
-      -- Busca recursiva do símbolo onde o cursor está
       local function find_symbol(symbols)
         for _, sym in ipairs(symbols) do
           local range = sym.range or (sym.location and sym.location.range)
@@ -60,12 +80,13 @@ function M.setup()
   
       local current = find_symbol(result)
       if current then
+        print("Símbolo encontrado:", current)
         vim.api.nvim_echo({ { current, "Title" } }, false, {})
       else
+        print("Nenhum símbolo encontrado na linha", cursor_line)
         vim.api.nvim_echo({ { "Nenhum símbolo encontrado", "Comment" } }, false, {})
       end
     end)
   end, { desc = "Mostra a hierarquia LSP atual (breadcrumb)" })
 end
-
 return M
