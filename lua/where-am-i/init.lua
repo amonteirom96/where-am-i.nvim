@@ -1,9 +1,9 @@
 local M = {}
 
--- Cache simples opcional
 local last_location = ""
+local last_line = -1
+local debounce_timer = nil
 
--- Ícones
 local icons = {
   File = " ",
   Module = "󰏗 ",
@@ -26,33 +26,32 @@ local icons = {
   Object = "󰅩 ",
   Key = "󰌋 ",
   Null = "󰟢 ",
-  EnumMember = " ",
-  Struct = " ",
-  Event = " ",
   Operator = "󰆕 ",
   TypeParameter = "󰊄 ",
 }
 
--- Função interna que realmente monta o breadcrumb
-local function resolve_breadcrumb(result)
-  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
-
-  local function find_symbol(symbols)
-    for _, sym in ipairs(symbols) do
+-- ----------------------------------------------------------------------
+-- Resolve símbolo
+-- ----------------------------------------------------------------------
+local function resolve_breadcrumb(result, cursor_line)
+  local function find_symbol(list)
+    for _, sym in ipairs(list) do
       local range = sym.range or (sym.location and sym.location.range)
-      if range
-          and cursor_line >= range.start.line + 1
-          and cursor_line <= range["end"].line + 1
-      then
-        if sym.children then
-          local child = find_symbol(sym.children)
-          if child then
-            local icon = icons[sym.kind and vim.lsp.protocol.SymbolKind[sym.kind]] or ""
-            return icon .. sym.name .. " › " .. child
+      if range then
+        if cursor_line >= range.start.line + 1
+            and cursor_line <= range["end"].line + 1
+        then
+          if sym.children then
+            local child = find_symbol(sym.children)
+            if child then
+              local icon = icons[vim.lsp.protocol.SymbolKind[sym.kind]] or ""
+              return icon .. sym.name .. " › " .. child
+            end
           end
+
+          local icon = icons[vim.lsp.protocol.SymbolKind[sym.kind]] or ""
+          return icon .. sym.name
         end
-        local icon = icons[sym.kind and vim.lsp.protocol.SymbolKind[sym.kind]] or ""
-        return icon .. sym.name
       end
     end
   end
@@ -60,53 +59,58 @@ local function resolve_breadcrumb(result)
   return find_symbol(result)
 end
 
+-- ----------------------------------------------------------------------
+-- Busca LSP (assíncrono)
+-- ----------------------------------------------------------------------
+local function fetch_location()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
 
------------------------------------------------------------------------
---  FUNÇÃO PRINCIPAL: retorna breadcrumb via callback
------------------------------------------------------------------------
-function M.get_location(cb)
-  local clients = vim.lsp.get_active_clients({ bufnr = 0 })
+  if cursor_line == last_line then
+    return
+  end
+  last_line = cursor_line
+
+  local clients = vim.lsp.get_active_clients({ bufnr = bufnr })
   if #clients == 0 then
-    cb(nil)
+    last_location = ""
     return
   end
 
   local params = { textDocument = vim.lsp.util.make_text_document_params() }
 
-  vim.lsp.buf_request(0, "textDocument/documentSymbol", params, function(err, result)
+  vim.lsp.buf_request(bufnr, "textDocument/documentSymbol", params, function(err, result)
     if err or not result then
-      cb(nil)
+      last_location = ""
       return
     end
 
-    local breadcrumb = resolve_breadcrumb(result)
-    last_location = breadcrumb or ""
-    cb(breadcrumb)
+    last_location = resolve_breadcrumb(result, cursor_line) or ""
   end)
 end
 
+-- ----------------------------------------------------------------------
+-- API pública
+-- ----------------------------------------------------------------------
 
------------------------------------------------------------------------
---  VERSÃO SINCRONA (usa cache da última resposta)
------------------------------------------------------------------------
+function M.update()
+  if debounce_timer then
+    vim.fn.timer_stop(debounce_timer)
+  end
+  debounce_timer = vim.fn.timer_start(100, fetch_location)
+end
+
 function M.get_location_sync()
   return last_location
 end
 
-
------------------------------------------------------------------------
--- Comando :WhereAmI
------------------------------------------------------------------------
 function M.setup()
   vim.api.nvim_create_user_command("WhereAmI", function()
-    M.get_location(function(breadcrumb)
-      if not breadcrumb then
-        vim.api.nvim_echo({ { "Nenhum símbolo encontrado", "WarningMsg" } }, false, {})
-      else
-        vim.api.nvim_echo({ { breadcrumb, "Title" } }, false, {})
-      end
-    end)
-  end, { desc = "Mostra a hierarquia LSP atual (breadcrumb)" })
+    M.update()
+    vim.defer_fn(function()
+      vim.notify(last_location ~= "" and last_location or "Nenhum símbolo encontrado")
+    end, 150)
+  end, {})
 end
 
 return M
