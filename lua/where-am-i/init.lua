@@ -65,14 +65,14 @@ function M.setup()
         for _, sym in ipairs(symbols) do
           local range = sym.range or (sym.location and sym.location.range)
           if range and cursor_line >= range.start.line + 1 and cursor_line <= range["end"].line + 1 then
+            local icon = icons[sym.kind and vim.lsp.protocol.SymbolKind[sym.kind]] or ""
             if sym.children then
               local child = find_symbol(sym.children)
               if child then
-                local icon = icons[sym.kind and vim.lsp.protocol.SymbolKind[sym.kind]] or ""
                 return (icon .. sym.name .. " › " .. child)
               end
             end
-            local icon = icons[sym.kind and vim.lsp.protocol.SymbolKind[sym.kind]] or ""
+            -- Se não achou filho (ex: dentro de um for), retorna o próprio símbolo
             return (icon .. sym.name)
           end
         end
